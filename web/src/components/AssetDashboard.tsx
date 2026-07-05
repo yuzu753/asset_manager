@@ -41,9 +41,16 @@ const emptyProductForm: ProductFormState = {
 };
 const emptyProducts: Product[] = [];
 
+function getSavedPassword() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  return window.localStorage.getItem("asset-manager-password") ?? "";
+}
+
 export function AssetDashboard() {
-  const [appPassword, setAppPassword] = useState("");
-  const [passwordInput, setPasswordInput] = useState("");
+  const [appPassword, setAppPassword] = useState(getSavedPassword);
+  const [passwordInput, setPasswordInput] = useState(getSavedPassword);
   const [data, setData] = useState<AssetsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -96,14 +103,11 @@ export function AssetDashboard() {
   }, [appPassword]);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem("asset-manager-password") ?? "";
-    setAppPassword(saved);
-    setPasswordInput(saved);
-  }, []);
-
-  useEffect(() => {
     if (appPassword) {
-      void loadAssets(appPassword);
+      const timerId = window.setTimeout(() => {
+        void loadAssets(appPassword);
+      }, 0);
+      return () => window.clearTimeout(timerId);
     }
   }, [appPassword, loadAssets]);
 
