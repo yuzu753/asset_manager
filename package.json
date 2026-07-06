@@ -1,0 +1,13 @@
+{
+  "name": "asset-manager",
+  "private": true,
+  "scripts": {
+    "build": "npm run build --prefix web",
+    "dev": "npm run dev --prefix web",
+    "lint": "npm run lint --prefix web",
+    "start": "npm run start --prefix web"
+  },
+  "dependencies": {
+    "next": "16.2.10"
+  }
+}
