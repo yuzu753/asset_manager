@@ -58,6 +58,10 @@ Supabase の無料Postgresをデータストアとして使い、CSVの初期取
 
 VercelなどのNext.js対応ホスティングに `web/` をデプロイし、以下の環境変数を設定します。
 
+Vercel の Project Settings > Build and Deployment では、Root Directory を `web` に設定してください。
+`web/package.json` に Next.js の依存関係があるため、Root Directory が `./` のままだと
+`No Next.js version detected` が出ることがあります。
+
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `APP_PASSWORD`
