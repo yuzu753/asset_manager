@@ -1,7 +1,6 @@
 # Asset Manager Web
 
-Supabase の無料Postgresをデータストアとして使い、CSVの初期取り込み後はWebアプリから金融商品と日次評価額を読み書きする Next.js アプリです。  
-アプリ本体は `web/` ディレクトリにあります。
+Supabase の無料Postgresをデータストアとして使い、CSVの初期取り込み後はWebアプリから金融商品と日次評価額を読み書きする Next.js アプリです。
 
 ## 使い方
 
@@ -31,7 +30,7 @@ Supabase の無料Postgresをデータストアとして使い、CSVの初期取
    );
    ```
 
-3. `web/.env.local.example` を参考に `web/.env.local` を作成します。
+3. `.env.local.example` を参考に `.env.local` を作成します。
 
    ```bash
    SUPABASE_URL=https://xxxx.supabase.co
@@ -42,7 +41,6 @@ Supabase の無料Postgresをデータストアとして使い、CSVの初期取
 4. 依存関係をインストールします。
 
    ```bash
-   cd web
    npm install
    ```
 
@@ -56,11 +54,9 @@ Supabase の無料Postgresをデータストアとして使い、CSVの初期取
 
 ## デプロイ
 
-VercelなどのNext.js対応ホスティングに `web/` をデプロイし、以下の環境変数を設定します。
+VercelなどのNext.js対応ホスティングにリポジトリルートをデプロイし、以下の環境変数を設定します。
 
-Vercel の Project Settings > Build and Deployment では、Root Directory を `web` に設定してください。
-`web/package.json` に Next.js の依存関係があるため、Root Directory が `./` のままだと
-`No Next.js version detected` が出ることがあります。
+Vercel の Project Settings > Build and Deployment では、Root Directory を空欄または `./` にしてください。
 Build Command、Output Directory、Install Command は Override せず、Vercel の Next.js 標準設定に任せてください。
 
 - `SUPABASE_URL`
