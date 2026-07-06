@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAppPassword } from "@/lib/auth";
+import { getAuthErrorStatus, requireAppPassword } from "@/lib/auth";
 import { parseAssetCsv } from "@/lib/csv";
 import { importAssets } from "@/lib/database";
 
@@ -30,7 +30,7 @@ export async function POST(request: Request) {
             ? error.message
             : "CSVインポートに失敗しました。",
       },
-      { status: 400 },
+      { status: getAuthErrorStatus(error) ?? 400 },
     );
   }
 }

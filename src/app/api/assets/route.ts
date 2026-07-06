@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAppPassword } from "@/lib/auth";
+import { getAuthErrorStatus, requireAppPassword } from "@/lib/auth";
 import { getAssets } from "@/lib/database";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +18,7 @@ export async function GET(request: Request) {
             ? error.message
             : "資産データの読み込みに失敗しました。",
       },
-      { status: 500 },
+      { status: getAuthErrorStatus(error) ?? 500 },
     );
   }
 }

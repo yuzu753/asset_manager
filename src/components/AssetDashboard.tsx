@@ -45,7 +45,7 @@ function getSavedPassword() {
   if (typeof window === "undefined") {
     return "";
   }
-  return window.localStorage.getItem("asset-manager-password") ?? "";
+  return window.localStorage.getItem("asset-manager-password")?.trim() ?? "";
 }
 
 export function AssetDashboard() {
@@ -79,7 +79,7 @@ export function AssetDashboard() {
       const response = await fetch("/api/assets", {
         cache: "no-store",
         headers: {
-          "x-app-password": password,
+          "x-app-password": password.trim(),
         },
       });
       const payload = await response.json();
@@ -113,8 +113,10 @@ export function AssetDashboard() {
 
   const handlePasswordSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    window.localStorage.setItem("asset-manager-password", passwordInput);
-    setAppPassword(passwordInput);
+    const nextPassword = passwordInput.trim();
+    window.localStorage.setItem("asset-manager-password", nextPassword);
+    setPasswordInput(nextPassword);
+    setAppPassword(nextPassword);
   };
 
   const handleCsvChange = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -1301,7 +1303,7 @@ async function sendJson(
     method,
     headers: {
       "Content-Type": "application/json",
-      "x-app-password": appPassword,
+      "x-app-password": appPassword.trim(),
     },
     body: JSON.stringify(body),
   });

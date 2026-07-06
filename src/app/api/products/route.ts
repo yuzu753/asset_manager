@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { DEFAULT_CATEGORY, DEFAULT_CURRENCY } from "@/lib/assets";
-import { requireAppPassword } from "@/lib/auth";
+import { getAuthErrorStatus, requireAppPassword } from "@/lib/auth";
 import { upsertProduct } from "@/lib/database";
 
 export const dynamic = "force-dynamic";
@@ -38,7 +38,7 @@ export async function POST(request: Request) {
             ? error.message
             : "金融商品の保存に失敗しました。",
       },
-      { status: 400 },
+      { status: getAuthErrorStatus(error) ?? 400 },
     );
   }
 }

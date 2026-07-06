@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { normaliseDate } from "@/lib/assets";
-import { requireAppPassword } from "@/lib/auth";
+import { getAuthErrorStatus, requireAppPassword } from "@/lib/auth";
 import { upsertValuation } from "@/lib/database";
 
 export const dynamic = "force-dynamic";
@@ -52,7 +52,7 @@ export async function PUT(request: Request) {
             ? error.message
             : "評価額の保存に失敗しました。",
       },
-      { status: 400 },
+      { status: getAuthErrorStatus(error) ?? 400 },
     );
   }
 }
