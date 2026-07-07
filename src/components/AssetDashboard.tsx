@@ -39,6 +39,7 @@ type ValuationEditState = {
 };
 
 type HistoryLimit = "25" | "50" | "100" | "all";
+type ProductTrendMode = "single" | "compare";
 
 const emptyProductForm: ProductFormState = {
   name: "",
@@ -47,6 +48,8 @@ const emptyProductForm: ProductFormState = {
   active: true,
 };
 const emptyProducts: Product[] = [];
+const PRODUCT_COMPARISON_LIMIT = 5;
+const PRODUCT_TREND_COLORS = ["#2563eb", "#dc2626", "#7c3aed", "#ea580c", "#0891b2"];
 
 function getSavedPassword() {
   if (typeof window === "undefined") {
@@ -520,6 +523,11 @@ export function AssetDashboard() {
 
               <TimelineChart data={timelineData} />
 
+              <ProductTimelineChart
+                products={activeProducts}
+                rows={filteredRows}
+              />
+
               <TotalHistory data={timelineData} />
 
               <ValuationHistory
@@ -944,6 +952,14 @@ type AssetTotalsEntry = TotalsEntry & {
   category: string;
 };
 
+type ProductTrendSeries = {
+  productId: string;
+  label: string;
+  category: string;
+  color: string;
+  data: TotalsEntry[];
+};
+
 function SummaryPanels({
   latestTotal,
   categoryTotals,
@@ -1075,32 +1091,35 @@ function ChartSection({
   );
 }
 
-function TimelineChart({ data }: { data: TotalsEntry[] }) {
+function MultiSeriesTimelineSvg({
+  series,
+  ariaLabel,
+  gradientId,
+  showArea = false,
+}: {
+  series: ProductTrendSeries[];
+  ariaLabel: string;
+  gradientId?: string;
+  showArea?: boolean;
+}) {
   const width = 760;
   const height = 320;
   const padding = { top: 24, right: 28, bottom: 52, left: 86 };
   const innerWidth = width - padding.left - padding.right;
   const innerHeight = height - padding.top - padding.bottom;
-  const values = data.map((item) => item.value);
+  const primaryData = series[0]?.data ?? [];
+  const values = series.flatMap((item) => item.data.map((point) => point.value));
   const minValue = values.length > 0 ? Math.min(...values) : 0;
   const maxValue = values.length > 0 ? Math.max(...values) : 1;
   const range = Math.max(maxValue - minValue, 1);
   const yMin = Math.max(0, minValue - range * 0.08);
   const yMax = maxValue + range * 0.08;
   const yRange = Math.max(yMax - yMin, 1);
-  const latest = data.at(-1);
-  const peak = data.reduce<TotalsEntry | undefined>(
-    (best, item) => (!best || item.value > best.value ? item : best),
-    undefined,
-  );
-  const low = data.reduce<TotalsEntry | undefined>(
-    (best, item) => (!best || item.value < best.value ? item : best),
-    undefined,
-  );
-  const labelStep = data.length > 6 ? Math.ceil(data.length / 6) : 1;
-  const pointStep = data.length > 24 ? Math.ceil(data.length / 24) : 1;
+  const labelStep = primaryData.length > 6 ? Math.ceil(primaryData.length / 6) : 1;
+  const pointStep = primaryData.length > 24 ? Math.ceil(primaryData.length / 24) : 1;
   const yTicks = Array.from({ length: 5 }, (_, index) => yMin + (yRange / 4) * index);
-  const points = data.map((item, index) => {
+
+  const getPoints = (data: TotalsEntry[]) => data.map((item, index) => {
     const x =
       data.length === 1
         ? innerWidth / 2
@@ -1108,13 +1127,141 @@ function TimelineChart({ data }: { data: TotalsEntry[] }) {
     const y = innerHeight - ((item.value - yMin) / yRange) * innerHeight;
     return { item, x, y };
   });
-  const linePath = points
+
+  const seriesPoints = series.map((item) => ({
+    ...item,
+    points: getPoints(item.data),
+  }));
+  const primaryPoints = seriesPoints[0]?.points ?? [];
+  const primaryLinePath = primaryPoints
     .map(({ x, y }, index) => `${index === 0 ? "M" : "L"} ${x} ${y}`)
     .join(" ");
-  const areaPath =
-    points.length > 0
-      ? `${linePath} L ${points.at(-1)?.x ?? 0} ${innerHeight} L ${points[0].x} ${innerHeight} Z`
+  const primaryAreaPath =
+    primaryPoints.length > 0
+      ? `${primaryLinePath} L ${primaryPoints.at(-1)?.x ?? 0} ${innerHeight} L ${primaryPoints[0].x} ${innerHeight} Z`
       : "";
+
+  return (
+    <svg
+      className="min-w-[720px]"
+      width="100%"
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      role="img"
+      aria-label={ariaLabel}
+    >
+      {showArea && gradientId && series[0] ? (
+        <defs>
+          <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor={series[0].color} stopOpacity="0.22" />
+            <stop offset="100%" stopColor={series[0].color} stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+      ) : null}
+      <g transform={`translate(${padding.left},${padding.top})`}>
+        {yTicks.map((tick, index) => {
+          const y = innerHeight - ((tick - yMin) / yRange) * innerHeight;
+          return (
+            <g key={`tick-${index}`}>
+              <line x1={0} x2={innerWidth} y1={y} y2={y} stroke="#e2e8f0" />
+              <text
+                x={-12}
+                y={y + 4}
+                textAnchor="end"
+                fontSize={11}
+                fill="#64748b"
+              >
+                {formatCompactCurrency(tick)}
+              </text>
+            </g>
+          );
+        })}
+
+        {showArea && gradientId && primaryAreaPath ? (
+          <path d={primaryAreaPath} fill={`url(#${gradientId})`} />
+        ) : null}
+
+        {seriesPoints.map((item) => {
+          const linePath = item.points
+            .map(({ x, y }, index) => `${index === 0 ? "M" : "L"} ${x} ${y}`)
+            .join(" ");
+          return linePath ? (
+            <path
+              key={`line-${item.productId}`}
+              d={linePath}
+              fill="none"
+              stroke={item.color}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={seriesPoints.length === 1 ? 3 : 2.5}
+            />
+          ) : null;
+        })}
+
+        {seriesPoints.map((seriesItem) =>
+          seriesItem.points.map(({ item, x, y }, index) => {
+            const showPoint = index % pointStep === 0 || index === seriesItem.points.length - 1;
+            if (!showPoint) {
+              return null;
+            }
+            return (
+              <circle
+                key={`point-${seriesItem.productId}-${item.label}-${index}`}
+                cx={x}
+                cy={y}
+                r={seriesPoints.length === 1 ? 4 : 3.5}
+                fill={seriesItem.color}
+                stroke="white"
+                strokeWidth={2}
+              >
+                <title>{`${seriesItem.label} ${item.label}: ${formatCurrency(item.value)}`}</title>
+              </circle>
+            );
+          }),
+        )}
+
+        {primaryData.map((item, index) => {
+          const showLabel = index % labelStep === 0 || index === primaryData.length - 1;
+          if (!showLabel) {
+            return null;
+          }
+          const x =
+            primaryData.length === 1
+              ? innerWidth / 2
+              : (innerWidth / Math.max(primaryData.length - 1, 1)) * index;
+          return (
+            <text
+              key={`label-${item.label}-${index}`}
+              x={x}
+              y={innerHeight + 26}
+              textAnchor="middle"
+              fontSize={11}
+              fill="#475569"
+            >
+              {item.label.slice(0, 7)}
+            </text>
+          );
+        })}
+        <line x1={0} x2={innerWidth} y1={innerHeight} y2={innerHeight} stroke="#cbd5e1" />
+        <line x1={0} x2={0} y1={0} y2={innerHeight} stroke="#cbd5e1" />
+      </g>
+    </svg>
+  );
+}
+
+function TimelineChart({ data }: { data: TotalsEntry[] }) {
+  const latest = data.at(-1);
+  const peak = getPeakEntry(data);
+  const low = getLowEntry(data);
+  const chartSeries: ProductTrendSeries[] = [
+    {
+      productId: "total",
+      label: "合計",
+      category: "",
+      color: "#059669",
+      data,
+    },
+  ];
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
@@ -1136,79 +1283,203 @@ function TimelineChart({ data }: { data: TotalsEntry[] }) {
         {data.length === 0 ? (
           <p className="py-16 text-center text-sm text-slate-500">データがありません。</p>
         ) : (
-          <svg
-            className="min-w-[720px]"
-            width="100%"
-            height={height}
-            viewBox={`0 0 ${width} ${height}`}
-            role="img"
-            aria-label="合計評価額の時系列グラフ"
-          >
-            <defs>
-              <linearGradient id="total-chart-area" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stopColor="#059669" stopOpacity="0.22" />
-                <stop offset="100%" stopColor="#059669" stopOpacity="0.02" />
-              </linearGradient>
-            </defs>
-            <g transform={`translate(${padding.left},${padding.top})`}>
-              {yTicks.map((tick, index) => {
-                const y = innerHeight - ((tick - yMin) / yRange) * innerHeight;
-                return (
-                  <g key={`tick-${index}`}>
-                    <line x1={0} x2={innerWidth} y1={y} y2={y} stroke="#e2e8f0" />
-                    <text
-                      x={-12}
-                      y={y + 4}
-                      textAnchor="end"
-                      fontSize={11}
-                      fill="#64748b"
-                    >
-                      {formatCompactCurrency(tick)}
-                    </text>
-                  </g>
-                );
-              })}
+          <MultiSeriesTimelineSvg
+            series={chartSeries}
+            ariaLabel="合計評価額の時系列グラフ"
+            gradientId="total-chart-area"
+            showArea
+          />
+        )}
+      </div>
+    </div>
+  );
+}
 
-              {areaPath ? <path d={areaPath} fill="url(#total-chart-area)" /> : null}
-              {linePath ? (
-                <path
-                  d={linePath}
-                  fill="none"
-                  stroke="#059669"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={3}
-                />
-              ) : null}
+function ProductTimelineChart({
+  products,
+  rows,
+}: {
+  products: Product[];
+  rows: AssetRow[];
+}) {
+  const [mode, setMode] = useState<ProductTrendMode>("single");
+  const [selectedProductId, setSelectedProductId] = useState("");
+  const [comparisonProductIds, setComparisonProductIds] = useState<string[]>([]);
+  const selectedProduct = products.find((product) => product.productId === selectedProductId);
+  const singleSeries = selectedProduct
+    ? buildProductTrendSeries(selectedProduct, rows, PRODUCT_TREND_COLORS[0])
+    : undefined;
+  const comparisonSeries = comparisonProductIds
+    .map((productId, index) => {
+      const product = products.find((item) => item.productId === productId);
+      return product
+        ? buildProductTrendSeries(
+            product,
+            rows,
+            PRODUCT_TREND_COLORS[index % PRODUCT_TREND_COLORS.length],
+          )
+        : undefined;
+    })
+    .filter((item): item is ProductTrendSeries => Boolean(item));
+  const singleData = singleSeries?.data ?? [];
+  const latest = singleData.at(-1);
+  const peak = getPeakEntry(singleData);
+  const low = getLowEntry(singleData);
+  const activeSeries = mode === "single" ? (singleSeries ? [singleSeries] : []) : comparisonSeries;
+  const hasChartData = activeSeries.some((item) => item.data.length > 0);
 
-              {points.map(({ item, x, y }, index) => {
-                const showPoint = index % pointStep === 0 || index === points.length - 1;
-                const showLabel = index % labelStep === 0 || index === points.length - 1;
-                return (
-                  <g key={`point-${item.label}-${index}`}>
-                    {showPoint ? (
-                      <circle cx={x} cy={y} r={4} fill="#059669" stroke="white" strokeWidth={2}>
-                        <title>{`${item.label}: ${formatCurrency(item.value)}`}</title>
-                      </circle>
-                    ) : null}
-                    {showLabel ? (
-                      <text
-                        x={x}
-                        y={innerHeight + 26}
-                        textAnchor="middle"
-                        fontSize={11}
-                        fill="#475569"
-                      >
-                        {item.label.slice(0, 7)}
-                      </text>
-                    ) : null}
-                  </g>
-                );
-              })}
-              <line x1={0} x2={innerWidth} y1={innerHeight} y2={innerHeight} stroke="#cbd5e1" />
-              <line x1={0} x2={0} y1={0} y2={innerHeight} stroke="#cbd5e1" />
-            </g>
-          </svg>
+  const toggleComparisonProduct = (productId: string) => {
+    setComparisonProductIds((current) => {
+      if (current.includes(productId)) {
+        return current.filter((item) => item !== productId);
+      }
+      if (current.length >= PRODUCT_COMPARISON_LIMIT) {
+        return current;
+      }
+      return [...current, productId];
+    });
+  };
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h3 className="text-lg font-semibold text-slate-900">金融商品ごとの評価額推移</h3>
+          <p className="mt-1 text-sm text-slate-600">
+            日別評価額表と同じく、未入力日は直近の評価額を引き継いで表示します。
+          </p>
+        </div>
+        <div className="inline-flex w-fit overflow-hidden rounded-md border border-slate-300">
+          {(["single", "compare"] as const).map((nextMode) => (
+            <button
+              key={nextMode}
+              type="button"
+              onClick={() => setMode(nextMode)}
+              className={`px-3 py-2 text-sm font-medium transition ${
+                mode === nextMode
+                  ? "bg-slate-900 text-white"
+                  : "bg-white text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              {nextMode === "single" ? "単一" : "比較"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {mode === "single" ? (
+        <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(220px,320px)_1fr]">
+          <label className="text-sm font-medium text-slate-700">
+            金融商品
+            <select
+              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              value={selectedProductId}
+              onChange={(event) => setSelectedProductId(event.target.value)}
+            >
+              <option value="">商品を選択</option>
+              {products.map((product) => (
+                <option key={product.productId} value={product.productId}>
+                  {product.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
+            <MetricChip label="最新" item={latest} />
+            <MetricChip label="最高" item={peak} />
+            <MetricChip label="最低" item={low} />
+          </div>
+        </div>
+      ) : (
+        <div className="mt-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm font-medium text-slate-700">
+              比較する商品を選択
+              <span className="ml-2 text-xs text-slate-500">
+                {comparisonProductIds.length}/{PRODUCT_COMPARISON_LIMIT}件
+              </span>
+            </p>
+            <button
+              type="button"
+              className="w-fit rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
+              disabled={comparisonProductIds.length === 0}
+              onClick={() => setComparisonProductIds([])}
+            >
+              選択解除
+            </button>
+          </div>
+          <div className="mt-3 grid max-h-44 grid-cols-1 gap-2 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2 xl:grid-cols-3">
+            {products.map((product) => {
+              const checked = comparisonProductIds.includes(product.productId);
+              const disabled =
+                !checked && comparisonProductIds.length >= PRODUCT_COMPARISON_LIMIT;
+              return (
+                <label
+                  key={product.productId}
+                  className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm ${
+                    checked
+                      ? "border-slate-400 bg-white text-slate-900"
+                      : "border-slate-200 bg-white text-slate-700"
+                  } ${disabled ? "opacity-50" : ""}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled={disabled}
+                    onChange={() => toggleComparisonProduct(product.productId)}
+                  />
+                  <span className="min-w-0 flex-1 truncate">{product.name}</span>
+                </label>
+              );
+            })}
+            {products.length === 0 ? (
+              <p className="py-6 text-center text-sm text-slate-500 sm:col-span-2 xl:col-span-3">
+                有効な金融商品がありません。
+              </p>
+            ) : null}
+          </div>
+        </div>
+      )}
+
+      {mode === "compare" && comparisonSeries.length > 0 ? (
+        <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          {comparisonSeries.map((item) => {
+            const latestItem = item.data.at(-1);
+            return (
+              <div
+                key={`legend-${item.productId}`}
+                className="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  <span
+                    className="h-3 w-3 shrink-0 rounded-full"
+                    style={{ backgroundColor: item.color }}
+                  />
+                  <span className="truncate font-medium text-slate-700">{item.label}</span>
+                </div>
+                <span className="whitespace-nowrap font-semibold text-slate-800">
+                  {latestItem ? formatCurrency(latestItem.value) : "-"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+
+      <div className="mt-5 overflow-x-auto">
+        {!hasChartData ? (
+          <p className="py-16 text-center text-sm text-slate-500">
+            {mode === "single"
+              ? "商品を選択してください。"
+              : "比較する商品を選択してください。"}
+          </p>
+        ) : (
+          <MultiSeriesTimelineSvg
+            series={activeSeries}
+            ariaLabel="金融商品ごとの評価額時系列グラフ"
+            gradientId={mode === "single" ? "product-chart-area" : undefined}
+            showArea={mode === "single"}
+          />
         )}
       </div>
     </div>
@@ -1591,6 +1862,37 @@ async function sendJson(
     throw new Error(payload.message ?? "保存に失敗しました。");
   }
   return payload;
+}
+
+function buildProductTrendSeries(
+  product: Product,
+  rows: AssetRow[],
+  color: string,
+): ProductTrendSeries {
+  return {
+    productId: product.productId,
+    label: product.name,
+    category: product.category,
+    color,
+    data: rows.map((row) => ({
+      label: row.label,
+      value: row.numeric[product.name] ?? 0,
+    })),
+  };
+}
+
+function getPeakEntry(data: TotalsEntry[]): TotalsEntry | undefined {
+  return data.reduce<TotalsEntry | undefined>(
+    (best, item) => (!best || item.value > best.value ? item : best),
+    undefined,
+  );
+}
+
+function getLowEntry(data: TotalsEntry[]): TotalsEntry | undefined {
+  return data.reduce<TotalsEntry | undefined>(
+    (best, item) => (!best || item.value < best.value ? item : best),
+    undefined,
+  );
 }
 
 function getValuationKey(valuation: Valuation): string {
