@@ -38,6 +38,8 @@ type ValuationEditState = {
   note: string;
 };
 
+type HistoryLimit = "25" | "50" | "100" | "all";
+
 const emptyProductForm: ProductFormState = {
   name: "",
   category: DEFAULT_CATEGORY,
@@ -1281,7 +1283,39 @@ function ValuationHistory({
     amount: "",
     note: "",
   });
+  const [query, setQuery] = useState("");
+  const [productFilter, setProductFilter] = useState("");
+  const [limit, setLimit] = useState<HistoryLimit>("50");
   const rows = [...valuations].sort((a, b) => b.date.localeCompare(a.date));
+  const productOptions = Array.from(
+    new Map(
+      valuations.map((valuation) => [
+        valuation.productId,
+        productById.get(valuation.productId)?.name ?? valuation.productId,
+      ]),
+    ),
+  ).sort(([, aName], [, bName]) => aName.localeCompare(bName, "ja"));
+  const latestDate = rows[0]?.date;
+  const queryText = query.trim().toLowerCase();
+  const filteredRows = rows.filter((valuation) => {
+    const productName = productById.get(valuation.productId)?.name ?? valuation.productId;
+    const matchesProduct = productFilter ? valuation.productId === productFilter : true;
+    const matchesQuery = queryText
+      ? [valuation.date, productName, valuation.note]
+          .join(" ")
+          .toLowerCase()
+          .includes(queryText)
+      : true;
+    return matchesProduct && matchesQuery;
+  });
+  const limitNumber = limit === "all" ? filteredRows.length : Number(limit);
+  const visibleRows = filteredRows.slice(0, limitNumber);
+  const hasActiveFilter = Boolean(queryText || productFilter);
+  const resetFilters = () => {
+    setQuery("");
+    setProductFilter("");
+    setLimit("50");
+  };
   const startEditing = (valuation: Valuation) => {
     setEditingKey(getValuationKey(valuation));
     setEditState({
@@ -1297,30 +1331,94 @@ function ValuationHistory({
   return (
     <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
       <div className="border-b border-slate-200 px-5 py-4">
-        <h3 className="text-lg font-semibold text-slate-900">入力履歴</h3>
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900">入力履歴</h3>
+            <div className="mt-2 flex flex-wrap gap-2 text-xs">
+              <span className="rounded-md bg-slate-100 px-2.5 py-1 font-medium text-slate-600">
+                全{valuations.length.toLocaleString("ja-JP")}件
+              </span>
+              <span className="rounded-md bg-slate-100 px-2.5 py-1 font-medium text-slate-600">
+                表示{visibleRows.length.toLocaleString("ja-JP")}件
+              </span>
+              <span className="rounded-md bg-slate-100 px-2.5 py-1 font-medium text-slate-600">
+                最新 {latestDate ?? "-"}
+              </span>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(180px,1fr)_minmax(160px,220px)_120px_auto] xl:w-[720px]">
+            <label className="text-xs font-medium text-slate-600">
+              検索
+              <input
+                className="mt-1 h-9 w-full rounded-md border border-slate-300 px-3 text-sm text-slate-700"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="日付・商品・メモ"
+              />
+            </label>
+            <label className="text-xs font-medium text-slate-600">
+              商品
+              <select
+                className="mt-1 h-9 w-full rounded-md border border-slate-300 px-3 text-sm text-slate-700"
+                value={productFilter}
+                onChange={(event) => setProductFilter(event.target.value)}
+              >
+                <option value="">すべて</option>
+                {productOptions.map(([productId, productName]) => (
+                  <option key={productId} value={productId}>
+                    {productName}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-xs font-medium text-slate-600">
+              件数
+              <select
+                className="mt-1 h-9 w-full rounded-md border border-slate-300 px-3 text-sm text-slate-700"
+                value={limit}
+                onChange={(event) => setLimit(event.target.value as HistoryLimit)}
+              >
+                <option value="25">25件</option>
+                <option value="50">50件</option>
+                <option value="100">100件</option>
+                <option value="all">全件</option>
+              </select>
+            </label>
+            <div className="flex items-end">
+              <button
+                type="button"
+                className="h-9 w-full rounded-md border border-slate-300 px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:opacity-50 sm:w-auto"
+                disabled={!hasActiveFilter && limit === "50"}
+                onClick={resetFilters}
+              >
+                リセット
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
-      <div className="overflow-x-auto">
+      <div className="max-h-[520px] overflow-auto">
         <table className="min-w-full divide-y divide-slate-200 text-sm">
-          <thead className="bg-slate-50">
+          <thead className="sticky top-0 z-10 bg-slate-50 shadow-[inset_0_-1px_0_#e2e8f0]">
             <tr>
-              <th className="px-4 py-2 text-left font-medium text-slate-600">日付</th>
-              <th className="px-4 py-2 text-left font-medium text-slate-600">商品</th>
-              <th className="px-4 py-2 text-right font-medium text-slate-600">評価額</th>
-              <th className="px-4 py-2 text-left font-medium text-slate-600">メモ</th>
-              <th className="px-4 py-2 text-left font-medium text-slate-600">操作</th>
+              <th className="whitespace-nowrap px-4 py-2 text-left font-medium text-slate-600">日付</th>
+              <th className="min-w-52 px-4 py-2 text-left font-medium text-slate-600">商品</th>
+              <th className="whitespace-nowrap px-4 py-2 text-right font-medium text-slate-600">評価額</th>
+              <th className="min-w-56 px-4 py-2 text-left font-medium text-slate-600">メモ</th>
+              <th className="whitespace-nowrap px-4 py-2 text-left font-medium text-slate-600">操作</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {rows.map((valuation) => {
+            {visibleRows.map((valuation) => {
               const rowKey = getValuationKey(valuation);
               const isEditing = editingKey === rowKey;
               return (
-                <tr key={rowKey}>
-                  <td className="whitespace-nowrap px-4 py-2 text-slate-700">{valuation.date}</td>
-                  <td className="whitespace-nowrap px-4 py-2 text-slate-700">
+                <tr key={rowKey} className="hover:bg-slate-50">
+                  <td className="whitespace-nowrap px-4 py-2.5 text-slate-700">{valuation.date}</td>
+                  <td className="px-4 py-2.5 font-medium text-slate-700">
                     {productById.get(valuation.productId)?.name ?? valuation.productId}
                   </td>
-                  <td className="whitespace-nowrap px-4 py-2 text-right text-slate-700">
+                  <td className="whitespace-nowrap px-4 py-2.5 text-right font-semibold text-slate-800">
                     {isEditing ? (
                       <input
                         inputMode="decimal"
@@ -1337,7 +1435,7 @@ function ValuationHistory({
                       formatCurrency(valuation.amount)
                     )}
                   </td>
-                  <td className="min-w-48 px-4 py-2 text-slate-700">
+                  <td className="px-4 py-2.5 text-slate-600">
                     {isEditing ? (
                       <input
                         className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
@@ -1350,10 +1448,10 @@ function ValuationHistory({
                         }
                       />
                     ) : (
-                      valuation.note
+                      <span className="line-clamp-2">{valuation.note || "-"}</span>
                     )}
                   </td>
-                  <td className="whitespace-nowrap px-4 py-2">
+                  <td className="whitespace-nowrap px-4 py-2.5">
                     {isEditing ? (
                       <div className="flex gap-2">
                         <button
@@ -1402,16 +1500,22 @@ function ValuationHistory({
                 </tr>
               );
             })}
-            {rows.length === 0 ? (
+            {visibleRows.length === 0 ? (
               <tr>
                 <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
-                  入力履歴がありません。
+                  {valuations.length === 0 ? "入力履歴がありません。" : "条件に合う履歴がありません。"}
                 </td>
               </tr>
             ) : null}
           </tbody>
         </table>
       </div>
+      {filteredRows.length > visibleRows.length ? (
+        <div className="border-t border-slate-200 bg-slate-50 px-5 py-3 text-center text-xs font-medium text-slate-500">
+          {filteredRows.length.toLocaleString("ja-JP")}件中
+          {visibleRows.length.toLocaleString("ja-JP")}件を表示しています。件数を変更するとさらに表示できます。
+        </div>
+      ) : null}
     </div>
   );
 }
