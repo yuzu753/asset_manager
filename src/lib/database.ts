@@ -127,6 +127,15 @@ export async function upsertValuation(input: ValuationInput): Promise<Valuation>
   return fromDbValuation(saved);
 }
 
+export async function deleteValuation(date: string, productId: string): Promise<void> {
+  await supabaseRequest(
+    `${VALUATIONS_TABLE}?date=eq.${encodeURIComponent(date)}&product_id=eq.${encodeURIComponent(productId)}`,
+    {
+      method: "DELETE",
+    },
+  );
+}
+
 export async function importAssets(imported: ImportedAssets) {
   const existingProducts = await readProducts();
   const productByName = new Map(existingProducts.map((product) => [product.name, product]));

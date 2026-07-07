@@ -33,6 +33,11 @@ type ValuationFormState = {
   note: string;
 };
 
+type ValuationEditState = {
+  amount: string;
+  note: string;
+};
+
 const emptyProductForm: ProductFormState = {
   name: "",
   category: DEFAULT_CATEGORY,
@@ -325,6 +330,70 @@ export function AssetDashboard() {
   }, [dataset, filteredRows]);
   const latestTotal = timelineData.at(-1);
 
+  const handleValuationUpdate = async (
+    valuation: Valuation,
+    nextState: ValuationEditState,
+  ): Promise<boolean> => {
+    const amount = Number(nextState.amount.replace(/,/g, ""));
+    if (!Number.isFinite(amount)) {
+      setError("評価額を数値で入力してください。");
+      return false;
+    }
+
+    setIsSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await sendJson(
+        "/api/valuations",
+        "PUT",
+        {
+          date: valuation.date,
+          productId: valuation.productId,
+          amount,
+          note: nextState.note,
+        },
+        appPassword,
+      );
+      setNotice("評価額を更新しました。");
+      await loadAssets();
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "評価額の更新に失敗しました。");
+      return false;
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleValuationDelete = async (valuation: Valuation) => {
+    const productName = productById.get(valuation.productId)?.name ?? valuation.productId;
+    if (!window.confirm(`${valuation.date} の ${productName} の評価額を削除しますか？`)) {
+      return;
+    }
+
+    setIsSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await sendJson(
+        "/api/valuations",
+        "DELETE",
+        {
+          date: valuation.date,
+          productId: valuation.productId,
+        },
+        appPassword,
+      );
+      setNotice("評価額を削除しました。");
+      await loadAssets();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "評価額の削除に失敗しました。");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const editProduct = (product: Product) => {
     setProductForm({
       productId: product.productId,
@@ -454,6 +523,9 @@ export function AssetDashboard() {
               <ValuationHistory
                 valuations={data.valuations}
                 productById={productById}
+                isSaving={isSaving}
+                onUpdate={handleValuationUpdate}
+                onDelete={handleValuationDelete}
               />
 
               <DataTable dataset={dataset} rows={sortedRows} />
@@ -1194,11 +1266,34 @@ function TotalHistory({ data }: { data: TotalsEntry[] }) {
 function ValuationHistory({
   valuations,
   productById,
+  isSaving,
+  onUpdate,
+  onDelete,
 }: {
   valuations: Valuation[];
   productById: Map<string, Product>;
+  isSaving: boolean;
+  onUpdate: (valuation: Valuation, nextState: ValuationEditState) => Promise<boolean>;
+  onDelete: (valuation: Valuation) => Promise<void>;
 }) {
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [editState, setEditState] = useState<ValuationEditState>({
+    amount: "",
+    note: "",
+  });
   const rows = [...valuations].sort((a, b) => b.date.localeCompare(a.date));
+  const startEditing = (valuation: Valuation) => {
+    setEditingKey(getValuationKey(valuation));
+    setEditState({
+      amount: String(valuation.amount),
+      note: valuation.note,
+    });
+  };
+  const cancelEditing = () => {
+    setEditingKey(null);
+    setEditState({ amount: "", note: "" });
+  };
+
   return (
     <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
       <div className="border-b border-slate-200 px-5 py-4">
@@ -1212,24 +1307,104 @@ function ValuationHistory({
               <th className="px-4 py-2 text-left font-medium text-slate-600">商品</th>
               <th className="px-4 py-2 text-right font-medium text-slate-600">評価額</th>
               <th className="px-4 py-2 text-left font-medium text-slate-600">メモ</th>
+              <th className="px-4 py-2 text-left font-medium text-slate-600">操作</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {rows.map((valuation) => (
-              <tr key={`${valuation.date}-${valuation.productId}`}>
-                <td className="whitespace-nowrap px-4 py-2 text-slate-700">{valuation.date}</td>
-                <td className="whitespace-nowrap px-4 py-2 text-slate-700">
-                  {productById.get(valuation.productId)?.name ?? valuation.productId}
-                </td>
-                <td className="whitespace-nowrap px-4 py-2 text-right text-slate-700">
-                  {formatCurrency(valuation.amount)}
-                </td>
-                <td className="px-4 py-2 text-slate-700">{valuation.note}</td>
-              </tr>
-            ))}
+            {rows.map((valuation) => {
+              const rowKey = getValuationKey(valuation);
+              const isEditing = editingKey === rowKey;
+              return (
+                <tr key={rowKey}>
+                  <td className="whitespace-nowrap px-4 py-2 text-slate-700">{valuation.date}</td>
+                  <td className="whitespace-nowrap px-4 py-2 text-slate-700">
+                    {productById.get(valuation.productId)?.name ?? valuation.productId}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-2 text-right text-slate-700">
+                    {isEditing ? (
+                      <input
+                        inputMode="decimal"
+                        className="w-36 rounded-md border border-slate-300 px-3 py-2 text-right text-sm"
+                        value={editState.amount}
+                        onChange={(event) =>
+                          setEditState((current) => ({
+                            ...current,
+                            amount: event.target.value,
+                          }))
+                        }
+                      />
+                    ) : (
+                      formatCurrency(valuation.amount)
+                    )}
+                  </td>
+                  <td className="min-w-48 px-4 py-2 text-slate-700">
+                    {isEditing ? (
+                      <input
+                        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                        value={editState.note}
+                        onChange={(event) =>
+                          setEditState((current) => ({
+                            ...current,
+                            note: event.target.value,
+                          }))
+                        }
+                      />
+                    ) : (
+                      valuation.note
+                    )}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-2">
+                    {isEditing ? (
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          className="rounded-md bg-slate-900 px-3 py-1 text-sm text-white transition hover:bg-slate-700 disabled:opacity-50"
+                          disabled={isSaving}
+                          onClick={async () => {
+                            const isUpdated = await onUpdate(valuation, editState);
+                            if (isUpdated) {
+                              cancelEditing();
+                            }
+                          }}
+                        >
+                          保存
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-md border border-slate-300 px-3 py-1 text-sm text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
+                          disabled={isSaving}
+                          onClick={cancelEditing}
+                        >
+                          取消
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          className="rounded-md border border-slate-300 px-3 py-1 text-sm text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
+                          disabled={isSaving}
+                          onClick={() => startEditing(valuation)}
+                        >
+                          編集
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-md border border-red-200 px-3 py-1 text-sm text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                          disabled={isSaving}
+                          onClick={() => void onDelete(valuation)}
+                        >
+                          削除
+                        </button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-4 py-6 text-center text-slate-500">
+                <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
                   入力履歴がありません。
                 </td>
               </tr>
@@ -1295,7 +1470,7 @@ function DataTable({ dataset, rows }: { dataset: AssetDataset; rows: AssetRow[] 
 
 async function sendJson(
   path: string,
-  method: "POST" | "PUT",
+  method: "DELETE" | "POST" | "PUT",
   body: unknown,
   appPassword: string,
 ) {
@@ -1312,6 +1487,10 @@ async function sendJson(
     throw new Error(payload.message ?? "保存に失敗しました。");
   }
   return payload;
+}
+
+function getValuationKey(valuation: Valuation): string {
+  return `${valuation.date}-${valuation.productId}`;
 }
 
 function getToday(): string {

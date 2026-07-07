@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { normaliseDate } from "@/lib/assets";
 import { getAuthErrorStatus, requireAppPassword } from "@/lib/auth";
-import { upsertValuation } from "@/lib/database";
+import { deleteValuation, upsertValuation } from "@/lib/database";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +51,39 @@ export async function PUT(request: Request) {
           error instanceof Error
             ? error.message
             : "評価額の保存に失敗しました。",
+      },
+      { status: getAuthErrorStatus(error) ?? 400 },
+    );
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    requireAppPassword(request);
+    const body = (await request.json()) as ValuationRequestBody;
+    const rawDate = typeof body.date === "string" ? body.date : "";
+    const date = normaliseDate(rawDate);
+    const productId =
+      typeof body.productId === "string" ? body.productId : "";
+
+    if (!date) {
+      throw new Error("日付は YYYY/MM/DD 形式で入力してください。");
+    }
+    if (!productId) {
+      throw new Error("金融商品を選択してください。");
+    }
+
+    await deleteValuation(date, productId);
+
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error(error);
+    return NextResponse.json(
+      {
+        message:
+          error instanceof Error
+            ? error.message
+            : "評価額の削除に失敗しました。",
       },
       { status: getAuthErrorStatus(error) ?? 400 },
     );
